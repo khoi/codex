@@ -97,7 +97,7 @@ jobs:
             cargo-${{ matrix.runner }}-${{ matrix.target }}-release-
 
       - name: Install sccache
-        uses: taiki-e/install-action@0c5db7f7f897c03b771660e91d065338615679f4 # v2
+        uses: taiki-e/install-action@41ef8c65f4034ff24ab1cc2cef52f3000bcf9523 # v2
         with:
           tool: sccache
           version: 0.7.5
@@ -154,7 +154,7 @@ jobs:
           sudo apt-get -y install --no-install-recommends musl-tools pkg-config
 
       - name: Install cargo-chef
-        uses: taiki-e/install-action@0c5db7f7f897c03b771660e91d065338615679f4 # v2
+        uses: taiki-e/install-action@41ef8c65f4034ff24ab1cc2cef52f3000bcf9523 # v2
         with:
           tool: cargo-chef
           version: 0.1.71
