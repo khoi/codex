@@ -1,10 +1,3 @@
-//! Data model for grouped exec-call history cells in the TUI transcript.
-//!
-//! An `ExecCell` can represent either a single command or an "exploring" group of related read/
-//! list/search commands. The chat widget relies on stable `call_id` matching to route progress and
-//! end events into the right cell, and it treats "call id not found" as a real signal (for
-//! example, an orphan end that should render as a separate history entry).
-
 use std::borrow::Cow;
 use std::time::Duration;
 use std::time::Instant;
@@ -104,7 +97,7 @@ impl ExecCell {
             duration: None,
             interaction_input,
         };
-        if self.is_exploring_cell() && Self::is_exploring_call(&call) {
+        if self.calls.iter().all(Self::is_groupable_call) && Self::is_groupable_call(&call) {
             self.calls.push(call);
             true
         } else {
@@ -133,7 +126,8 @@ impl ExecCell {
     }
 
     pub(crate) fn should_flush(&self) -> bool {
-        !self.is_exploring_cell() && self.calls.iter().all(|c| c.duration.is_some())
+        self.calls.iter().any(|call| !Self::is_groupable_call(call))
+            && self.calls.iter().all(|call| call.duration.is_some())
     }
 
     pub(crate) fn mark_failed(&mut self) {
@@ -191,7 +185,7 @@ impl ExecCell {
     }
 
     pub(super) fn is_exploring_call(call: &ExecCall) -> bool {
-        !matches!(call.source, ExecCommandSource::UserShell)
+        Self::is_groupable_call(call)
             && !call.parsed.is_empty()
             && call.parsed.iter().all(|p| {
                 matches!(
@@ -201,6 +195,13 @@ impl ExecCell {
                         | ParsedCommand::Search { .. }
                 )
             })
+    }
+
+    fn is_groupable_call(call: &ExecCall) -> bool {
+        matches!(
+            call.source,
+            ExecCommandSource::Agent | ExecCommandSource::UnifiedExecStartup
+        )
     }
 }
 

@@ -2,5 +2,6 @@
 source: tui/src/chatwidget/tests/exec_flow.rs
 expression: active_blob(&chat)
 ---
-• Using tools
-  └ Viewed Image example.png
+• Explored
+  └ Search needle in src
+    Read main.rs

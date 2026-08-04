@@ -3,4 +3,5 @@ source: tui/src/chatwidget/tests/exec_flow.rs
 expression: active_blob(&chat)
 ---
 • Using tools
-  └ Viewed Image example.png
+  └ Ran echo first
+    Ran echo second

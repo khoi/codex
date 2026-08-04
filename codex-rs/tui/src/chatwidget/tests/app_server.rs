@@ -487,12 +487,8 @@ async fn collab_spawn_end_shows_requested_model_and_effort() {
         /*replay_kind*/ None,
     );
 
-    let cells = drain_insert_history(&mut rx);
-    let rendered = cells
-        .iter()
-        .map(|lines| lines_to_single_string(lines))
-        .collect::<Vec<_>>()
-        .join("\n");
+    assert!(drain_insert_history(&mut rx).is_empty());
+    let rendered = active_blob(&chat);
 
     assert!(
         rendered.contains("Spawned Robie [explorer] (gpt-5 high)"),
@@ -782,9 +778,8 @@ async fn live_app_server_file_change_item_started_preserves_changes() {
         /*replay_kind*/ None,
     );
 
-    let cells = drain_insert_history(&mut rx);
-    assert!(!cells.is_empty(), "expected patch history to be rendered");
-    let transcript = lines_to_single_string(cells.last().expect("patch cell"));
+    assert!(drain_insert_history(&mut rx).is_empty());
+    let transcript = active_blob(&chat);
     assert!(
         transcript.contains("Added foo.txt") || transcript.contains("Edited foo.txt"),
         "expected patch summary to include foo.txt, got: {transcript}"
@@ -992,11 +987,8 @@ async fn live_app_server_collab_wait_items_render_history() {
         /*replay_kind*/ None,
     );
 
-    let combined = drain_insert_history(&mut rx)
-        .into_iter()
-        .map(|lines| lines_to_single_string(&lines))
-        .collect::<Vec<_>>()
-        .join("\n");
+    assert!(drain_insert_history(&mut rx).is_empty());
+    let combined = active_blob(&chat);
     assert_chatwidget_snapshot!("app_server_collab_wait_items_render_history", combined);
 }
 
@@ -1054,11 +1046,8 @@ async fn live_app_server_collab_spawn_completed_renders_requested_model_and_effo
         /*replay_kind*/ None,
     );
 
-    let combined = drain_insert_history(&mut rx)
-        .into_iter()
-        .map(|lines| lines_to_single_string(&lines))
-        .collect::<Vec<_>>()
-        .join("\n");
+    assert!(drain_insert_history(&mut rx).is_empty());
+    let combined = active_blob(&chat);
     assert_chatwidget_snapshot!(
         "app_server_collab_spawn_completed_renders_requested_model_and_effort",
         combined

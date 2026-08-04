@@ -65,8 +65,13 @@ pub(crate) fn new_view_image_tool_call(path: LegacyAppPathString, cwd: &Path) ->
         .unwrap_or_else(|| path.into_string());
 
     let lines: Vec<Line<'static>> = vec![
-        vec!["• ".dim(), "Viewed Image".bold()].into(),
-        vec!["  └ ".dim(), display_path.dim()].into(),
+        vec![
+            "• ".dim(),
+            "Viewed Image".bold(),
+            " ".into(),
+            display_path.dim(),
+        ]
+        .into(),
     ];
 
     PlainHistoryCell { lines }

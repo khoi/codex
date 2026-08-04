@@ -6761,7 +6761,7 @@ async fn replay_thread_snapshot_replays_turn_history_in_order() {
 
 #[tokio::test]
 async fn replace_chat_widget_reseeds_collab_agent_metadata_for_replay() {
-    let (mut app, mut app_event_rx, _op_rx) = make_test_app_with_channels().await;
+    let (mut app, _app_event_rx, _op_rx) = make_test_app_with_channels().await;
     let receiver_thread_id =
         ThreadId::from_string("019cff70-2599-75e2-af72-b958ce5dc1cc").expect("valid thread");
     app.agent_navigation.upsert(
@@ -6827,16 +6827,12 @@ async fn replace_chat_widget_reseeds_collab_agent_metadata_for_replay() {
         /*resume_restored_queue*/ false,
     );
 
-    let mut saw_named_wait = false;
-    while let Ok(event) = app_event_rx.try_recv() {
-        if let AppEvent::InsertHistoryCell(cell) = event {
-            let transcript = lines_to_single_string(&cell.transcript_lines(/*width*/ 80));
-            saw_named_wait |= transcript.contains("Robie [explorer]");
-        }
-    }
-
+    let transcript = app
+        .chat_widget
+        .active_cell_transcript_lines(/*width*/ 80)
+        .expect("active wait item");
     assert!(
-        saw_named_wait,
+        lines_to_single_string(&transcript).contains("Robie [explorer]"),
         "expected replayed wait item to keep agent name"
     );
 }

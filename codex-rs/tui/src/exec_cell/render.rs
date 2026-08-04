@@ -6,6 +6,7 @@ use super::model::ExecCell;
 use crate::exec_command::strip_bash_lc_and_escape;
 use crate::history_cell::HistoryCell;
 use crate::history_cell::plain_lines;
+use crate::line_truncation::truncate_line_with_ellipsis_if_overflow;
 use crate::motion::MotionMode;
 use crate::motion::ReducedMotionIndicator;
 use crate::motion::activity_indicator;
@@ -187,6 +188,8 @@ impl HistoryCell for ExecCell {
     fn display_lines(&self, width: u16) -> Vec<Line<'static>> {
         if self.is_exploring_cell() {
             self.exploring_display_lines(width)
+        } else if self.calls.len() > 1 {
+            self.grouped_command_display_lines(width)
         } else {
             self.command_display_lines(width)
         }
@@ -240,6 +243,22 @@ impl HistoryCell for ExecCell {
 
     fn raw_lines(&self) -> Vec<Line<'static>> {
         plain_lines(self.transcript_lines(u16::MAX))
+    }
+
+    fn activity_lines(&self, width: u16) -> Vec<Line<'static>> {
+        self.tool_activity_lines(width)
+    }
+
+    fn is_exploration_activity(&self) -> bool {
+        self.is_exploring_cell()
+    }
+
+    fn is_active_activity(&self) -> bool {
+        self.is_active()
+    }
+
+    fn fail_activity(&mut self) {
+        ExecCell::mark_failed(self);
     }
 }
 
@@ -347,6 +366,100 @@ impl ExecCell {
 
         out.extend(prefix_lines(out_indented, "  └ ".dim(), "    ".into()));
         out
+    }
+
+    fn grouped_command_display_lines(&self, width: u16) -> Vec<Line<'static>> {
+        let active = self.is_active();
+        let bullet = if active {
+            activity_marker(self.active_start_time(), self.animations_enabled())
+        } else if self.calls.iter().any(|call| {
+            call.output
+                .as_ref()
+                .is_some_and(|output| output.exit_code != 0)
+        }) {
+            "•".red().bold()
+        } else {
+            "•".green().bold()
+        };
+        let title = if active { "Running" } else { "Ran" };
+        let mut out = vec![Line::from(vec![
+            bullet,
+            " ".into(),
+            format!("{title} {} commands", self.calls.len()).bold(),
+        ])];
+
+        for (index, call) in self.calls.iter().enumerate() {
+            let command = strip_bash_lc_and_escape(&call.command)
+                .split_whitespace()
+                .join(" ");
+            let mut line = Line::from(if index == 0 {
+                "  └ ".dim()
+            } else {
+                "    ".into()
+            });
+            if let Some(command) = highlight_bash_to_lines(&command).into_iter().next() {
+                line.extend(command);
+            }
+            out.push(truncate_line_with_ellipsis_if_overflow(
+                line,
+                usize::from(width),
+            ));
+        }
+
+        out
+    }
+
+    fn tool_activity_lines(&self, width: u16) -> Vec<Line<'static>> {
+        let mut lines = Vec::new();
+        for call in &self.calls {
+            if Self::is_exploring_call(call) {
+                for parsed in &call.parsed {
+                    let line = match parsed {
+                        ParsedCommand::Read { name, .. } => {
+                            Line::from(vec!["Read".cyan(), " ".into(), name.clone().into()])
+                        }
+                        ParsedCommand::ListFiles { cmd, path } => Line::from(vec![
+                            "List".cyan(),
+                            " ".into(),
+                            path.clone().unwrap_or(cmd.clone()).into(),
+                        ]),
+                        ParsedCommand::Search { cmd, query, path } => {
+                            let mut spans = vec!["Search".cyan(), " ".into()];
+                            match (query, path) {
+                                (Some(query), Some(path)) => {
+                                    spans.extend([
+                                        query.clone().into(),
+                                        " in ".dim(),
+                                        path.clone().into(),
+                                    ]);
+                                }
+                                (Some(query), None) => spans.push(query.clone().into()),
+                                _ => spans.push(cmd.clone().into()),
+                            }
+                            Line::from(spans)
+                        }
+                        ParsedCommand::Unknown { .. } => unreachable!(),
+                    };
+                    lines.push(truncate_line_with_ellipsis_if_overflow(
+                        line,
+                        usize::from(width),
+                    ));
+                }
+            } else {
+                let command = strip_bash_lc_and_escape(&call.command)
+                    .split_whitespace()
+                    .join(" ");
+                let mut line = Line::from(vec!["Ran".cyan(), " ".into()]);
+                if let Some(command) = highlight_bash_to_lines(&command).into_iter().next() {
+                    line.extend(command);
+                }
+                lines.push(truncate_line_with_ellipsis_if_overflow(
+                    line,
+                    usize::from(width),
+                ));
+            }
+        }
+        lines
     }
 
     fn command_display_lines(&self, width: u16) -> Vec<Line<'static>> {
@@ -704,12 +817,53 @@ mod tests {
     use super::*;
     use codex_app_server_protocol::CommandExecutionSource as ExecCommandSource;
     use pretty_assertions::assert_eq;
+    use std::time::Duration;
 
     fn render_line_text(line: &Line<'static>) -> String {
         line.spans
             .iter()
             .map(|span| span.content.as_ref())
             .collect::<String>()
+    }
+
+    #[test]
+    fn grouped_commands_are_single_line_and_hide_output() {
+        let mut cell = new_active_exec_command(
+            "first".to_string(),
+            vec!["bash".into(), "-lc".into(), "printf one\nprintf two".into()],
+            Vec::new(),
+            ExecCommandSource::Agent,
+            /*interaction_input*/ None,
+            /*animations_enabled*/ false,
+        );
+        assert!(cell.complete_call(
+            "first",
+            CommandOutput::new(/*exit_code*/ 0, "hidden first output".to_string()),
+            Duration::from_millis(1),
+        ));
+        assert!(cell.add_call(
+            "second".to_string(),
+            vec![
+                "bash".into(),
+                "-lc".into(),
+                "echo a-command-that-does-not-fit-on-one-line".into(),
+            ],
+            Vec::new(),
+            ExecCommandSource::Agent,
+            /*interaction_input*/ None,
+        ));
+        assert!(cell.complete_call(
+            "second",
+            CommandOutput::new(/*exit_code*/ 0, "hidden second output".to_string()),
+            Duration::from_millis(1),
+        ));
+
+        let rendered = cell
+            .display_lines(/*width*/ 36)
+            .iter()
+            .map(render_line_text)
+            .join("\n");
+        insta::assert_snapshot!("grouped_commands_are_single_line_and_hide_output", rendered);
     }
 
     #[test]

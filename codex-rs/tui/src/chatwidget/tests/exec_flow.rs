@@ -294,54 +294,41 @@ async fn unified_exec_begin_restores_working_status_snapshot() {
 async fn exec_history_cell_shows_working_then_completed() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
 
-    // Begin command
     let begin = begin_exec(&mut chat, "call-1", "echo done");
-
-    let cells = drain_insert_history(&mut rx);
-    assert_eq!(cells.len(), 0, "no exec cell should have been flushed yet");
-
-    // End command successfully
+    assert!(drain_insert_history(&mut rx).is_empty());
     end_exec(&mut chat, begin, "done", "", /*exit_code*/ 0);
 
-    let cells = drain_insert_history(&mut rx);
-    // Exec end now finalizes and flushes the exec cell immediately.
-    assert_eq!(cells.len(), 1, "expected finalized exec cell to flush");
-    // Inspect the flushed exec cell rendering.
-    let lines = &cells[0];
-    let blob = lines_to_single_string(lines);
-    // New behavior: no glyph markers; ensure command is shown and no panic.
+    assert!(drain_insert_history(&mut rx).is_empty());
+    let blob = active_blob(&chat);
     assert!(
-        blob.contains("• Ran"),
-        "expected summary header present: {blob:?}"
+        blob.contains("• Using tools"),
+        "expected tool group header: {blob:?}"
     );
     assert!(
-        blob.contains("echo done"),
-        "expected command text to be present: {blob:?}"
+        blob.contains("Ran echo done"),
+        "expected command row: {blob:?}"
     );
+    assert_eq!(blob.matches("done").count(), 1, "expected hidden output");
 }
 
 #[tokio::test]
 async fn exec_history_cell_shows_working_then_failed() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
 
-    // Begin command
     let begin = begin_exec(&mut chat, "call-2", "false");
-    let cells = drain_insert_history(&mut rx);
-    assert_eq!(cells.len(), 0, "no exec cell should have been flushed yet");
-
-    // End command with failure
+    assert!(drain_insert_history(&mut rx).is_empty());
     end_exec(&mut chat, begin, "", "Bloop", /*exit_code*/ 2);
 
-    let cells = drain_insert_history(&mut rx);
-    // Exec end with failure should also flush immediately.
-    assert_eq!(cells.len(), 1, "expected finalized exec cell to flush");
-    let lines = &cells[0];
-    let blob = lines_to_single_string(lines);
+    assert!(drain_insert_history(&mut rx).is_empty());
+    let blob = active_blob(&chat);
     assert!(
-        blob.contains("• Ran false"),
-        "expected command and header text present: {blob:?}"
+        blob.contains("Ran false"),
+        "expected failed command row: {blob:?}"
     );
-    assert!(blob.to_lowercase().contains("bloop"), "expected error text");
+    assert!(
+        !blob.to_lowercase().contains("bloop"),
+        "expected hidden error output"
+    );
 }
 
 #[tokio::test]
@@ -375,11 +362,10 @@ async fn exec_end_without_begin_uses_event_command() {
         },
     );
 
-    let cells = drain_insert_history(&mut rx);
-    assert_eq!(cells.len(), 1, "expected finalized exec cell to flush");
-    let blob = lines_to_single_string(&cells[0]);
+    assert!(drain_insert_history(&mut rx).is_empty());
+    let blob = active_blob(&chat);
     assert!(
-        blob.contains("• Ran echo orphaned"),
+        blob.contains("Ran echo orphaned"),
         "expected command text to come from event: {blob:?}"
     );
     assert!(
@@ -409,25 +395,19 @@ async fn exec_end_without_begin_does_not_flush_unrelated_running_exploring_cell(
         /*exit_code*/ 0,
     );
 
-    let cells = drain_insert_history(&mut rx);
-    assert_eq!(cells.len(), 1, "only the orphan end should be inserted");
-    let orphan_blob = lines_to_single_string(&cells[0]);
-    assert!(
-        orphan_blob.contains("• Ran echo repro-marker"),
-        "expected orphan end to render a standalone entry: {orphan_blob:?}"
-    );
+    assert!(drain_insert_history(&mut rx).is_empty());
     let active = active_blob(&chat);
     assert!(
-        active.contains("• Exploring"),
-        "expected unrelated exploring call to remain active: {active:?}"
+        active.contains("• Using tools"),
+        "expected one mixed tool group: {active:?}"
     );
     assert!(
         active.contains("Read null"),
         "expected active exploring command to remain visible: {active:?}"
     );
     assert!(
-        !active.contains("echo repro-marker"),
-        "orphaned end should not replace the active exploring cell: {active:?}"
+        active.contains("Ran echo repro-marker"),
+        "expected completed command in the same group: {active:?}"
     );
 }
 
@@ -444,29 +424,19 @@ async fn exec_end_without_begin_flushes_completed_unrelated_exploring_cell() {
     let orphan = begin_unified_exec_startup(&mut chat, "call-after", "proc-1", "echo after");
     end_exec(&mut chat, orphan, "after\n", "", /*exit_code*/ 0);
 
-    let cells = drain_insert_history(&mut rx);
-    assert_eq!(
-        cells.len(),
-        2,
-        "completed exploring cell should flush before the orphan entry"
-    );
-    let first = lines_to_single_string(&cells[0]);
-    let second = lines_to_single_string(&cells[1]);
+    assert!(drain_insert_history(&mut rx).is_empty());
+    let active = active_blob(&chat);
     assert!(
-        first.contains("• Explored"),
-        "expected flushed exploring cell: {first:?}"
+        active.contains("• Using tools"),
+        "expected one mixed tool group: {active:?}"
     );
     assert!(
-        first.contains("List ls -la"),
-        "expected flushed exploring cell: {first:?}"
+        active.contains("List ls -la"),
+        "expected list row: {active:?}"
     );
     assert!(
-        second.contains("• Ran echo after"),
-        "expected orphan end entry after flush: {second:?}"
-    );
-    assert!(
-        chat.transcript.active_cell.is_none(),
-        "both entries should be finalized"
+        active.contains("Ran echo after"),
+        "expected command row: {active:?}"
     );
 }
 
@@ -526,11 +496,10 @@ async fn exec_history_shows_unified_exec_startup_commands() {
         /*exit_code*/ 0,
     );
 
-    let cells = drain_insert_history(&mut rx);
-    assert_eq!(cells.len(), 1, "expected finalized exec cell to flush");
-    let blob = lines_to_single_string(&cells[0]);
+    assert!(drain_insert_history(&mut rx).is_empty());
+    let blob = active_blob(&chat);
     assert!(
-        blob.contains("• Ran echo unified exec startup"),
+        blob.contains("Ran echo unified exec startup"),
         "expected startup command to render: {blob:?}"
     );
 }
@@ -852,30 +821,30 @@ async fn unified_exec_non_empty_then_empty_snapshots() {
 
 #[tokio::test]
 async fn view_image_tool_call_adds_history_cell() {
-    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
     let image_path = chat.config.cwd.join("example.png");
 
     handle_view_image_tool_call(&mut chat, "call-image", image_path);
 
-    let cells = drain_insert_history(&mut rx);
-    assert_eq!(cells.len(), 1, "expected a single history cell");
-    let combined = lines_to_single_string(&cells[0]);
-    assert_chatwidget_snapshot!("local_image_attachment_history_snapshot", combined);
+    assert_chatwidget_snapshot!(
+        "local_image_attachment_history_snapshot",
+        active_blob(&chat)
+    );
 }
 
 #[tokio::test]
 async fn view_image_tool_call_preserves_foreign_path() {
-    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
     let image_path: LegacyAppPathString =
         serde_json::from_value(json!(r"C:\workspace\assets\example.png"))
             .expect("valid legacy app path string");
 
     handle_view_image_tool_call(&mut chat, "call-image", image_path);
 
-    let cells = drain_insert_history(&mut rx);
-    assert_eq!(cells.len(), 1, "expected a single history cell");
-    let combined = lines_to_single_string(&cells[0]);
-    assert_chatwidget_snapshot!("foreign_image_attachment_history_snapshot", combined);
+    assert_chatwidget_snapshot!(
+        "foreign_image_attachment_history_snapshot",
+        active_blob(&chat)
+    );
 }
 
 #[tokio::test]
@@ -904,7 +873,7 @@ async fn image_generation_begin_restores_working_status_after_single_line_preamb
 
 #[tokio::test]
 async fn image_generation_call_adds_history_cell() {
-    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
 
     handle_image_generation_end(
         &mut chat,
@@ -914,13 +883,10 @@ async fn image_generation_call_adds_history_cell() {
         Some(test_path_buf("/tmp/ig-1.png").abs()),
     );
 
-    let cells = drain_insert_history(&mut rx);
-    assert_eq!(cells.len(), 1, "expected a single history cell");
     let platform_file_url = url::Url::from_file_path(test_path_buf("/tmp/ig-1.png"))
         .expect("test path should convert to file URL")
         .to_string();
-    let combined =
-        lines_to_single_string(&cells[0]).replace(&platform_file_url, "file:///tmp/ig-1.png");
+    let combined = active_blob(&chat).replace(&platform_file_url, "file:///tmp/ig-1.png");
     assert_chatwidget_snapshot!("image_generation_call_history_snapshot", combined);
 
     handle_image_generation_end(
@@ -931,11 +897,9 @@ async fn image_generation_call_adds_history_cell() {
         /*saved_path*/ None,
     );
 
-    let cells = drain_insert_history(&mut rx);
-    assert_eq!(cells.len(), 1, "expected a single failure history cell");
     assert_chatwidget_snapshot!(
         "failed_image_generation_call_history_snapshot",
-        lines_to_single_string(&cells[0])
+        active_blob(&chat)
     );
 }
 
@@ -986,6 +950,107 @@ async fn exec_history_extends_previous_when_consecutive() {
         /*exit_code*/ 0,
     );
     assert_chatwidget_snapshot!("exploring_step6_finish_cat_bar", active_blob(&chat));
+}
+
+#[tokio::test]
+async fn consecutive_commands_render_as_compact_group() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+
+    let first = begin_exec(&mut chat, "first", "echo first");
+    end_exec(
+        &mut chat,
+        first,
+        "hidden first output\n",
+        "",
+        /*exit_code*/ 0,
+    );
+    assert!(drain_insert_history(&mut rx).is_empty());
+
+    let second = begin_exec(&mut chat, "second", "echo second");
+    end_exec(
+        &mut chat,
+        second,
+        "hidden second output\n",
+        "",
+        /*exit_code*/ 0,
+    );
+    assert!(drain_insert_history(&mut rx).is_empty());
+
+    assert_chatwidget_snapshot!(
+        "consecutive_commands_render_as_compact_group",
+        active_blob(&chat)
+    );
+}
+
+#[tokio::test]
+async fn search_and_read_render_under_explored() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+
+    let search = begin_exec(&mut chat, "search", "rg needle src");
+    end_exec(
+        &mut chat,
+        search,
+        "src/main.rs:needle\n",
+        "",
+        /*exit_code*/ 0,
+    );
+
+    let read = begin_exec(&mut chat, "read", "sed -n '1,20p' src/main.rs");
+    end_exec(
+        &mut chat,
+        read,
+        "hidden file contents\n",
+        "",
+        /*exit_code*/ 0,
+    );
+
+    assert!(drain_insert_history(&mut rx).is_empty());
+    assert_chatwidget_snapshot!("search_and_read_render_under_explored", active_blob(&chat));
+}
+
+#[tokio::test]
+async fn mixed_tool_calls_render_as_one_compact_group() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+
+    let search = begin_exec(&mut chat, "search", "rg needle src");
+    end_exec(
+        &mut chat,
+        search,
+        "src/main.rs:needle\n",
+        "",
+        /*exit_code*/ 0,
+    );
+
+    let read = begin_exec(&mut chat, "read", "sed -n '1,20p' src/main.rs");
+    end_exec(
+        &mut chat,
+        read,
+        "hidden file contents\n",
+        "",
+        /*exit_code*/ 0,
+    );
+
+    let command = begin_exec(
+        &mut chat,
+        "command",
+        "echo a-command-that-is-too-long-to-fit-on-one-line-without-truncation",
+    );
+    end_exec(
+        &mut chat,
+        command,
+        "hidden command output\n",
+        "",
+        /*exit_code*/ 0,
+    );
+
+    let image_path = chat.config.cwd.join("artifact.png");
+    handle_view_image_tool_call(&mut chat, "image", image_path);
+
+    assert!(drain_insert_history(&mut rx).is_empty());
+    assert_chatwidget_snapshot!(
+        "mixed_tool_calls_render_as_one_compact_group",
+        active_blob(&chat)
+    );
 }
 
 #[tokio::test]
@@ -1425,7 +1490,6 @@ async fn apply_patch_events_emit_history_cells() {
         "expected approval request to surface via modal without emitting history cells"
     );
 
-    // 2) Begin apply -> per-file apply block cell (no global header)
     let mut changes2 = HashMap::new();
     changes2.insert(
         PathBuf::from("foo.txt"),
@@ -1434,15 +1498,13 @@ async fn apply_patch_events_emit_history_cells() {
         },
     );
     handle_patch_apply_begin(&mut chat, "c1", "turn-c1", changes2);
-    let cells = drain_insert_history(&mut rx);
-    assert!(!cells.is_empty(), "expected apply block cell to be sent");
-    let blob = lines_to_single_string(cells.last().unwrap());
+    assert!(drain_insert_history(&mut rx).is_empty());
+    let blob = active_blob(&chat);
     assert!(
         blob.contains("Added foo.txt") || blob.contains("Edited foo.txt"),
         "expected single-file header with filename (Added/Edited): {blob:?}"
     );
 
-    // 3) End apply success -> success cell
     let mut end_changes = HashMap::new();
     end_changes.insert(
         PathBuf::from("foo.txt"),
@@ -1457,11 +1519,7 @@ async fn apply_patch_events_emit_history_cells() {
         end_changes,
         AppServerPatchApplyStatus::Completed,
     );
-    let cells = drain_insert_history(&mut rx);
-    assert!(
-        cells.is_empty(),
-        "no success cell should be emitted anymore"
-    );
+    assert!(drain_insert_history(&mut rx).is_empty());
 }
 
 #[tokio::test]
@@ -1497,9 +1555,8 @@ async fn apply_patch_manual_approval_adjusts_header() {
     );
     handle_patch_apply_begin(&mut chat, "c1", "turn-c1", apply_changes);
 
-    let cells = drain_insert_history(&mut rx);
-    assert!(!cells.is_empty(), "expected apply block cell to be sent");
-    let blob = lines_to_single_string(cells.last().unwrap());
+    assert!(drain_insert_history(&mut rx).is_empty());
+    let blob = active_blob(&chat);
     assert!(
         blob.contains("Added foo.txt") || blob.contains("Edited foo.txt"),
         "expected apply summary header for foo.txt: {blob:?}"
@@ -1542,13 +1599,11 @@ async fn apply_patch_manual_flow_snapshot() {
         },
     );
     handle_patch_apply_begin(&mut chat, "c1", "turn-c1", apply_changes);
-    let approved_lines = drain_insert_history(&mut rx)
-        .pop()
-        .expect("approved patch cell");
+    assert!(drain_insert_history(&mut rx).is_empty());
 
     assert_chatwidget_snapshot!(
         "apply_patch_manual_flow_history_approved",
-        lines_to_single_string(&approved_lines)
+        active_blob(&chat)
     );
 }
 

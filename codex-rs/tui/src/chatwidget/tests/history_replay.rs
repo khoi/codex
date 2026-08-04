@@ -1238,11 +1238,12 @@ async fn deferred_mcp_lifecycle_events_keep_fifo_after_stream_finishes() {
     chat.flush_interrupt_queue();
 
     assert!(chat.interrupts.is_empty());
-    assert!(chat.transcript.active_cell.is_none());
-    let rendered = drain_insert_history(&mut rx)
-        .into_iter()
-        .map(|lines| lines_to_single_string(&lines))
-        .collect::<String>();
+    assert!(drain_insert_history(&mut rx).is_empty());
+    let rendered = lines_to_single_string(
+        &chat
+            .active_cell_transcript_lines(/*width*/ 80)
+            .expect("active MCP tool group"),
+    );
     assert!(rendered.contains("deferred result"), "{rendered}");
 }
 

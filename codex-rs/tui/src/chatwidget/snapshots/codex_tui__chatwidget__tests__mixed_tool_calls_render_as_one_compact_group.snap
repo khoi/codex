@@ -1,0 +1,9 @@
+---
+source: tui/src/chatwidget/tests/exec_flow.rs
+expression: active_blob(&chat)
+---
+• Using tools
+  └ Search needle in src
+    Read main.rs
+    Ran echo a-command-that-is-too-long-to-fit-on-one-line-without-truncation
+    Viewed Image artifact.png

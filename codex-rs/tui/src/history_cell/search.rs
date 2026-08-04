@@ -120,6 +120,14 @@ impl HistoryCell for WebSearchCell {
             vec![Line::from(format!("{header}{separator}{detail}"))]
         }
     }
+
+    fn is_exploration_activity(&self) -> bool {
+        true
+    }
+
+    fn is_active_activity(&self) -> bool {
+        !self.completed
+    }
 }
 
 pub(crate) fn new_active_web_search_call(

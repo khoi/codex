@@ -316,6 +316,7 @@ use crate::history_cell::HookCell;
 use crate::history_cell::McpInvocation;
 use crate::history_cell::McpToolCallCell;
 use crate::history_cell::PlainHistoryCell;
+use crate::history_cell::ToolActivityCell;
 use crate::history_cell::WebSearchCell;
 use crate::key_hint;
 use crate::key_hint::KeyBinding;
@@ -425,6 +426,7 @@ mod streaming;
 use self::status_surfaces::CachedProjectRootName;
 mod tokens;
 pub(crate) use self::tokens::TokenActivityView;
+mod tool_activity;
 mod tool_lifecycle;
 mod tool_requests;
 mod transcript;
@@ -1211,7 +1213,10 @@ impl ChatWidget {
     }
 
     fn flush_active_cell(&mut self) {
-        if let Some(active) = self.transcript.active_cell.take() {
+        if let Some(mut active) = self.transcript.active_cell.take() {
+            if let Some(group) = active.as_any_mut().downcast_mut::<ToolActivityCell>() {
+                group.complete();
+            }
             self.transcript.needs_final_message_separator = true;
             self.app_event_tx.send(AppEvent::InsertHistoryCell(active));
             self.request_pending_usage_output_insertion();
@@ -1362,12 +1367,7 @@ impl ChatWidget {
     /// Mark the active cell as failed (✗) and flush it into history.
     fn finalize_active_cell_as_failed(&mut self) {
         if let Some(mut cell) = self.transcript.active_cell.take() {
-            // Insert finalized cell into history and keep grouping consistent.
-            if let Some(exec) = cell.as_any_mut().downcast_mut::<ExecCell>() {
-                exec.mark_failed();
-            } else if let Some(tool) = cell.as_any_mut().downcast_mut::<McpToolCallCell>() {
-                tool.mark_failed();
-            }
+            cell.fail_activity();
             self.add_boxed_history(cell);
             self.request_pending_usage_output_insertion();
         }

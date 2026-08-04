@@ -246,6 +246,14 @@ impl HistoryCell for McpToolCallCell {
         }
         Some((self.start_time.elapsed().as_millis() / 50) as u64)
     }
+
+    fn is_active_activity(&self) -> bool {
+        self.result.is_none()
+    }
+
+    fn fail_activity(&mut self) {
+        McpToolCallCell::mark_failed(self);
+    }
 }
 
 pub(crate) fn new_active_mcp_tool_call(

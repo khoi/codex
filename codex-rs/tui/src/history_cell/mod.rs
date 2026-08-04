@@ -122,6 +122,7 @@ mod request_user_input;
 mod search;
 mod separators;
 mod session;
+mod tool_activity;
 
 pub(crate) use approvals::*;
 pub(crate) use base::*;
@@ -138,6 +139,7 @@ pub(crate) use request_user_input::*;
 pub(crate) use search::*;
 pub(crate) use separators::*;
 pub(crate) use session::*;
+pub(crate) use tool_activity::*;
 
 #[cfg(test)]
 mod tests;
@@ -193,6 +195,20 @@ pub(crate) trait HistoryCell: std::fmt::Debug + Send + Sync + Any {
 
     /// Returns copy-friendly plain logical lines for raw scrollback mode.
     fn raw_lines(&self) -> Vec<Line<'static>>;
+
+    fn activity_lines(&self, _width: u16) -> Vec<Line<'static>> {
+        self.display_lines(u16::MAX).into_iter().take(1).collect()
+    }
+
+    fn is_exploration_activity(&self) -> bool {
+        false
+    }
+
+    fn is_active_activity(&self) -> bool {
+        false
+    }
+
+    fn fail_activity(&mut self) {}
 
     /// Returns rich visible lines plus terminal hyperlink metadata.
     fn display_hyperlink_lines(&self, width: u16) -> Vec<HyperlinkLine> {
